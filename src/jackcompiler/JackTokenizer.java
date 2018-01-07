@@ -9,7 +9,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import org.apache.commons.io.FileUtils;
@@ -19,12 +18,13 @@ import org.apache.commons.io.FileUtils;
  */
 public class JackTokenizer {
 
-    private static String SPACE = " ";
-    private char[] symbol = {'{', '}', '(', ')', '[', ']', '.', ',', ';', '+', '-', '*', '/', '&', '|', '<', '>', '=', '~'};
+    private static final String SPACE = " ";
+    private final char[] symbol = {'{', '}', '(', ')', '[', ']', '.', ',', ';', '+', '-', '*', '/', '&', '|', '<', '>', '=', '~'};
     private int currentTokenIndex;
-    private List<Token> tokens;
+    private final List<Token> tokens;
     /**
      * @param args the command line arguments
+     * @throws java.io.IOException
      */
     public static void main(String[] args) throws IOException {
         JackTokenizer jtk = new JackTokenizer(new File("test.jack"));
@@ -37,11 +37,7 @@ public class JackTokenizer {
     }
     
     public boolean hasMoreTokens(){
-        if(currentTokenIndex < (tokens.size() - 1)){
-            return true;
-        }else{
-            return false;
-        }
+        return currentTokenIndex < (tokens.size() - 1);
     }
     
     public void advance(){
@@ -87,6 +83,21 @@ public class JackTokenizer {
         return ((StringVal)(tokens.get(currentTokenIndex))).getStringVal();
     }
     
+    public KEYWORD keyWord(){
+        Token curToken = tokens.get(currentTokenIndex);
+        if(curToken.getTokenType() != TOKEN_TYPE.KEYWORD){
+            throw new ClassCastException("Current token is not of type: "+ TOKEN_TYPE.KEYWORD.toString());
+        }
+        return ((KeyWord)(tokens.get(currentTokenIndex))).getKeyword();
+    }
+    
+    public String lookAhead(){
+        if(!hasMoreTokens()){
+            throw new RuntimeException("No more token to look ahead");
+        }
+        return tokens.get(currentTokenIndex+1).toString();
+    }
+    
     /********************* Private Helper Methods And Classes *****************/
 
     private ArrayList<Token> process(File inputFile) throws IOException {
@@ -102,15 +113,15 @@ public class JackTokenizer {
         //content = replaceAllConsqutiveWhiteSpace(content, SPACE);
         
         //split the string by space
-        List<String> tokens = splitIgnoringBinder(content, '"');
+        List<String> toks = splitIgnoringBinder(content, '"');
 
         //create array list of size number of token
         ArrayList<Token> tokenlist = new ArrayList<>();
 
         //populate the tokens into token list
-        for (String token : tokens) {
+        toks.stream().forEach((token) -> {
             tokenlist.add(getTokenWithString(token));
-        }
+        });
 
         System.out.println("Tokenization done successfully");
         
@@ -118,7 +129,7 @@ public class JackTokenizer {
     }
     
     private List splitIgnoringBinder(String content, char binder){
-        ArrayList<String> tokens = new ArrayList<>();
+        ArrayList<String> toks = new ArrayList<>();
         int curIndex = 0;
         int docLen = content.length();
         while(curIndex < docLen){
@@ -129,7 +140,7 @@ public class JackTokenizer {
                     throw new RuntimeException("provided content is not propery bounded with " + binder);
                 }else{
                     String token = content.substring(curIndex, nextBinderIndex+1);
-                    tokens.add(token);
+                    toks.add(token);
                     curIndex = nextBinderIndex + 2; //eg. a = "my name is sa"
                 }
             }else if(Character.isWhitespace(curChar)){
@@ -140,11 +151,11 @@ public class JackTokenizer {
                     nextSplitterIndex = docLen;
                 }
                 String token = content.substring(curIndex, nextSplitterIndex);
-                tokens.add(token);
+                toks.add(token);
                 curIndex = nextSplitterIndex+1;
             }
         }
-        return tokens;
+        return toks;
     }
     
     private int nextWhiteSpace(String content, int startIndex){
@@ -173,13 +184,13 @@ public class JackTokenizer {
     
     private String addBeforeAndAfter(String content, char[] symbolArr, String addString){
         HashSet<Character> symbols = new HashSet<>();
-        for(char symbol : symbolArr){
-            symbols.add(symbol);
+        for(char sym : symbolArr){
+            symbols.add(sym);
         }
-        StringBuffer result = new StringBuffer(content.length());
+        StringBuilder result = new StringBuilder(content.length());
         for(char character : content.toCharArray()){
             if(symbols.contains(character)){
-                result.append(addString + character + addString);
+                result.append(addString).append(character).append(addString);
             }else{
                 result.append(character);
             }
@@ -233,9 +244,9 @@ public class JackTokenizer {
         StringBuilder content = new StringBuilder();
         content.append("<tokens>");
         appendLine(content);
-        for(Token token : tokens){
+        tokens.stream().forEach((token) -> {
             appendToken(content, token);
-        }
+        });
         content.append("</tokens>");
         appendLine(content);
         System.out.println(content.toString());
@@ -251,36 +262,48 @@ public class JackTokenizer {
     private void appendTokenVal(StringBuilder content, Token token) {
         String tokenVal = null;
         TOKEN_TYPE tokenType = token.getTokenType();
-        if(tokenType == TOKEN_TYPE.IDENTIFIER){
-            tokenVal = ((Identifier)token).getIdentifier();
-        }else if(tokenType == TOKEN_TYPE.INT_CONST){
-            tokenVal = Integer.toString(((IntVal)token).getIntVal());
-        }else if(tokenType == TOKEN_TYPE.KEYWORD){
-            tokenVal = ((KeyWord)token).getKeyword().toString().toLowerCase();
-        }else if(tokenType == TOKEN_TYPE.STRING_CONST){
-            tokenVal = ((StringVal)token).getStringVal();
-        }else {
-            tokenVal = Character.toString(((Symbol)token).getSymbol());
+        if(null != tokenType)switch (tokenType) {
+            case IDENTIFIER:
+                tokenVal = ((Identifier)token).getIdentifier();
+                break;
+            case INT_CONST:
+                tokenVal = Integer.toString(((IntVal)token).getIntVal());
+                break;
+            case KEYWORD:
+                tokenVal = ((KeyWord)token).getKeyword().toString().toLowerCase();
+                break;
+            case STRING_CONST:
+                tokenVal = ((StringVal)token).getStringVal();
+                break;
+            default:
+                tokenVal = Character.toString(((Symbol)token).getSymbol());
+                break;
         }
         if(tokenVal == null){
             throw new RuntimeException("token does not contain value");
         }
-        if(tokenVal.equals("<")){
-            tokenVal = "&lt;";
-        }else if(tokenVal.equals(">")){
-            tokenVal = "&gt;";
-        }else if(tokenVal.equals("&")){
-            tokenVal = "&amp;";
+        switch (tokenVal) {
+            case "<":
+                tokenVal = "&lt;";
+                break;
+            case ">":
+                tokenVal = "&gt;";
+                break;
+            case "&":
+                tokenVal = "&amp;";
+                break;
+            default:
+                break;
         }
-        content.append(" " + tokenVal + " ");
+        content.append(" ").append(tokenVal).append(" ");
     }
     
     private void appendStartTokenType(StringBuilder content, TOKEN_TYPE tokenType){
-        content.append("<" + getTokenTypString(tokenType) + ">");
+        content.append("<").append(getTokenTypString(tokenType)).append(">");
     }
     
     private void appendEndTokenType(StringBuilder content, TOKEN_TYPE tokenType){
-        content.append("</" + getTokenTypString(tokenType) + ">");
+        content.append("</").append(getTokenTypString(tokenType)).append(">");
     }
     
     private String getTokenTypString(TOKEN_TYPE tokenType){
@@ -301,7 +324,7 @@ public class JackTokenizer {
 
     private class Token {
 
-        private TOKEN_TYPE tokenType;
+        private final TOKEN_TYPE tokenType;
 
         Token(TOKEN_TYPE token_type) {
             this.tokenType = token_type;
@@ -324,6 +347,11 @@ public class JackTokenizer {
         public KEYWORD getKeyword() {
             return keyword;
         }
+        
+        @Override
+        public String toString(){
+            return keyword.toString().toLowerCase();
+        }
     }
 
     private class Symbol extends Token {
@@ -338,6 +366,11 @@ public class JackTokenizer {
         public char getSymbol() {
             return symbol;
         }
+        
+        @Override
+        public String toString(){
+            return Character.toString(symbol);
+        }
     }
 
     private class Identifier extends Token {
@@ -350,6 +383,11 @@ public class JackTokenizer {
         }
 
         public String getIdentifier() {
+            return id;
+        }
+        
+        @Override
+        public String toString(){
             return id;
         }
     }
@@ -366,6 +404,11 @@ public class JackTokenizer {
         public int getIntVal() {
             return intVal;
         }
+        
+        @Override
+        public String toString(){
+            return Integer.toString(intVal);
+        }
     }
 
     private class StringVal extends Token {
@@ -378,6 +421,11 @@ public class JackTokenizer {
         }
 
         public String getStringVal() {
+            return stringVal;
+        }
+        
+        @Override
+        public String toString(){
             return stringVal;
         }
     }
