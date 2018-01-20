@@ -70,7 +70,7 @@ public class CompilationEngine {
     }
 
     public void compileSubroutine() {
-        String tokenName = "subRoutineDec";
+        String tokenName = "subroutineDec";
         writeBegin(tokenName);
 
         //constructor, function, or method
@@ -97,16 +97,14 @@ public class CompilationEngine {
     }
 
     public void compileParameterList() {
+        String tokenName = "parameterList";
+        writeBegin(tokenName);
         if (matchesTypeBegin()) {
-            String tokenName = "parameterList";
-            writeBegin(tokenName);
-
             type();
             varName();
             comma_type_varName_zero_more();
-
-            writeEnd(tokenName);
         }
+        writeEnd(tokenName);
     }
 
     public void compileVarDec() {
@@ -280,15 +278,13 @@ public class CompilationEngine {
     }
 
     public void compileExpressionList() {
+        String tokenName = "expressionList";
+        writeBegin(tokenName);
         if (matchesExpressionBegin()) {
-            String tokenName = "expressionList";
-            writeBegin(tokenName);
-
             compileExpression();
             comma_expression_zero_more();
-
-            writeEnd(tokenName);
         }
+        writeEnd(tokenName);
     }
 
     //*** token writer helpers ***/
@@ -375,7 +371,7 @@ public class CompilationEngine {
     private void integerConstant() {
         checkTokenType(TOKEN_TYPE.INT_CONST);
         int curTok = tokenizer.intVal();
-        writeToken("int_const", Integer.toString(curTok));
+        writeToken("integerConstant", Integer.toString(curTok));
         if (tokenizer.hasMoreTokens()) {
             tokenizer.advance();
         }
@@ -384,7 +380,7 @@ public class CompilationEngine {
     private void stringConstant() {
         checkTokenType(TOKEN_TYPE.STRING_CONST);
         String curTok = tokenizer.stringVal();
-        writeToken("string_const", curTok);
+        writeToken("stringConstant", curTok);
         if (tokenizer.hasMoreTokens()) {
             tokenizer.advance();
         }
@@ -457,10 +453,15 @@ public class CompilationEngine {
     }
 
     private void subroutineBody() {
+        String tokenName = "subroutineBody";
+        writeBegin(tokenName);
+    
         symbol('{');
         varDec_zero_more();
         compileStatements();
         symbol('}');
+        
+        writeEnd(tokenName);
     }
 
     private void subroutineCall() {
