@@ -3,7 +3,7 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package VMWriter;
+package vmwriter;
 
 /**
  *
@@ -22,7 +22,7 @@ public class VMWriter {
 
     private final StringBuffer vmCode;
 
-    public VMWriter(String fileName) {
+    public VMWriter() {
         vmCode = new StringBuffer();
     }
 
@@ -103,13 +103,17 @@ public class VMWriter {
         appendAsLowerCase(RETURN);
         appendNewLine();
     }
+    
+    public void open(String fileName){
+        //code to file open
+    }
 
     public void close() {
         System.out.print(vmCode.toString());
     }
 
     public static void main(String args[]) {
-        VMWriter wr = new VMWriter("");
+        VMWriter wr = new VMWriter();
         wr.writeFunction("Main.fibonacci", 0);
         wr.writePush(Segment.ARGUMENT, 0);
         wr.writePush(Segment.CONSTANT, 2);

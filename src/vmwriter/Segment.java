@@ -3,20 +3,19 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package VMWriter;
+package vmwriter;
 
 /**
  *
  * @author sid
  */
-public enum ArithmaticCommand {
-    ADD,
-    SUB,
-    NEG,
-    EQ,
-    GT,
-    LT,
-    AND,
-    OR,
-    NOT
+public enum Segment {
+    CONSTANT,
+    ARGUMENT,
+    LOCAL,
+    STATIC,
+    THIS,
+    THAT,
+    POINTER,
+    TEMP
 }
