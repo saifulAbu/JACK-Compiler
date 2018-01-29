@@ -54,4 +54,11 @@ class ClassLevelSymbolTable {
     public int indexOf(String name) {
         return symbolTable.indexOf(name);
     }
+    
+    public void print(){
+        System.out.println("<--- class level ---->");
+        symbolTable.print();
+        System.out.println("<--- class level ---->");
+        System.out.println();
+    }
 }

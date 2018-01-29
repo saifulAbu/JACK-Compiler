@@ -86,6 +86,14 @@ public class SymbolTable {
         }
     }
     
+    public void printClassLevelSymTable(){
+        classLevelSymbolTable.print();
+    }
+    
+    public void printMethodLevelSymTable(){
+        methodLevelSymbolTable.print();
+    }
+    
     //test
     public static void main(String args[]){
         SymbolTable st = new SymbolTable();

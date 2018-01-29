@@ -60,4 +60,11 @@ class MethodLevelSymbolTable {
     public boolean isDeclared(String name){
         return symbolTable.isDeclared(name);
     }
+
+    void print() {
+        System.out.println("#--- method level ----#");
+        symbolTable.print();
+        System.out.println("#--- end method level ---#");
+        System.out.println();
+    }
 }

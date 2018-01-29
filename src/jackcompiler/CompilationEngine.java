@@ -10,6 +10,9 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import symboltable.KIND;
+import symboltable.SymbolTable;
+import vmwriter.VMWriter;
 
 /**
  *
@@ -19,7 +22,11 @@ public class CompilationEngine {
 
     private final JackTokenizer tokenizer;
     private final Set<Character> symbols;
-    private StringBuilder content = new StringBuilder();
+    private final StringBuilder content = new StringBuilder();
+    private final VMWriter vmWriter;
+    private final SymbolTable symbolTable;
+    private String thisClassName;
+    private final String thisObj = "this";
 
     public static void main(String[] args) throws IOException {
         CompilationEngine cengn = new CompilationEngine(new File("test.jack"));
@@ -29,6 +36,8 @@ public class CompilationEngine {
     public CompilationEngine(File input) throws IOException {
         this.symbols = new HashSet<>(Arrays.asList('{', '}', '(', ')', '[', ']', '.', ',', ';', '+', '-', '*', '/', '&', '|', '<', '>', '=', '~'));
         tokenizer = new JackTokenizer(input);
+        vmWriter = new VMWriter();
+        symbolTable = new SymbolTable();
     }
 
     public void beginCompilation() {
@@ -42,28 +51,58 @@ public class CompilationEngine {
         writeBegin(tokenName);
 
         keyword(KEYWORD.CLASS);
-        className();
+        thisClassName = className();
         symbol('{');
         classVarDec_zero_more();
         subroutineDec_zero_more();
         symbol('}');
-
+        //delete this
+        symbolTable.printClassLevelSymTable();
         writeEnd(tokenName);
+    }
+    
+    private void classVarDec_zero_more() {
+        while (matchesClassVarDecBegin()) {
+            compileClassVarDec();
+        }
+    }
+
+    private void subroutineDec_zero_more() {
+        while (matchesSubroutineDecBegin()) {
+            symbolTable.startSubroutine();
+            compileSubroutine();
+            symbolTable.printMethodLevelSymTable();
+        }
     }
 
     public void compileClassVarDec() {
+        final String type;
+        final KIND kind;
+        String varName;
+
         String tokenName = "classVarDec";
         writeBegin(tokenName);
 
         //static or field
         if (matchesKeyWord(KEYWORD.STATIC)) {
             keyword(KEYWORD.STATIC);
+            kind = KIND.STATIC;
         } else {
             keyword(KEYWORD.FIELD);
+            kind = KIND.FIELD;
         }
-        type();
-        varName();
-        comma_varName_zero_more();
+        type = type();
+        varName = varName();
+        symbolTable.define(varName, type, kind);
+
+        //comma varname zero or more
+        char comma = ',';
+        while (matchesSymbol(comma)) {
+            symbol(comma);
+            varName = varName();
+            symbolTable.define(varName, type, kind);
+        }
+
         symbol(';');
 
         writeEnd(tokenName);
@@ -80,6 +119,8 @@ public class CompilationEngine {
             keyword(KEYWORD.FUNCTION);
         } else {
             keyword(KEYWORD.METHOD);
+            //! add "this" to symbol table
+            symbolTable.define(thisObj, thisClassName, KIND.ARG);
         }
         //void or type
         if (matchesKeyWord(KEYWORD.VOID)) {
@@ -100,23 +141,44 @@ public class CompilationEngine {
         String tokenName = "parameterList";
         writeBegin(tokenName);
         if (matchesTypeBegin()) {
-            type();
-            varName();
-            comma_type_varName_zero_more();
+            String type = type();
+            String varName = varName();
+            symbolTable.define(varName, type, KIND.ARG);
+            //comma_type_varName_zero_more();
+            char comma = ',';
+            while (matchesSymbol(comma)) {
+                symbol(comma);
+                type = type();
+                varName = varName();
+                symbolTable.define(varName, type, KIND.ARG);
+            }
         }
         writeEnd(tokenName);
     }
 
     public void compileVarDec() {
+        final KIND kind = KIND.VAR;
+        final String type;
+        String varName;
+        
         String tokenName = "varDec";
         writeBegin(tokenName);
 
         keyword(KEYWORD.VAR);
-        type();
-        varName();
-        comma_varName_zero_more();
-        symbol(';');
+        type = type();
+        varName = varName();
+        symbolTable.define(varName, type, kind);
         
+        //comma_varName_zero_more();
+        char comma = ',';
+        while (matchesSymbol(comma)) {
+            symbol(comma);
+            varName = varName();
+            symbolTable.define(varName, type, kind);
+        }
+        
+        symbol(';');
+
         writeEnd(tokenName);
     }
 
@@ -295,32 +357,32 @@ public class CompilationEngine {
     private void writeBegin(String tokenName) {
         content.append("<").append(tokenName).append(">");
         appendLine();
-        System.out.println("<" + tokenName + ">");
+        //System.out.println("<" + tokenName + ">");
     }
 
     private void writeEnd(String tokenName) {
         content.append("</").append(tokenName).append(">");
         appendLine();
-        System.out.println("</" + tokenName + ">");
+        //System.out.println("</" + tokenName + ">");
     }
 
     private void writeToken(String tokenType, String tokenVal) {
-        if(tokenVal.equals("<")){
+        if (tokenVal.equals("<")) {
             tokenVal = "&lt;";
-        }else if(tokenVal.equals(">")){
+        } else if (tokenVal.equals(">")) {
             tokenVal = "&gt;";
-        }else if(tokenVal.equals("&")){
+        } else if (tokenVal.equals("&")) {
             tokenVal = "&amp;";
         }
-        
+
         content.append("<").append(tokenType).append(">");
         content.append(" ").append(tokenVal).append(" ");
         content.append("</").append(tokenType).append(">");
         appendLine();
-        
-        System.out.print("<" + tokenType + ">");
-        System.out.print(" " + tokenVal + " ");
-        System.out.println("</" + tokenType + ">");
+
+        //System.out.print("<" + tokenType + ">");
+        //System.out.print(" " + tokenVal + " ");
+        //System.out.println("</" + tokenType + ">");
     }
 
     //*** tokenizer related helper ***/
@@ -335,7 +397,7 @@ public class CompilationEngine {
         }
     }
 
-    private void keyword(jackcompiler.KEYWORD keyword) {
+    private String keyword(jackcompiler.KEYWORD keyword) {
         checkTokenType(TOKEN_TYPE.KEYWORD);
         KEYWORD curTok = tokenizer.keyWord();
         if (curTok != keyword) {
@@ -345,6 +407,7 @@ public class CompilationEngine {
         if (tokenizer.hasMoreTokens()) {
             tokenizer.advance();
         }
+        return keyword.toString().toLowerCase();
     }
 
     private void symbol(char symbol) {
@@ -359,13 +422,14 @@ public class CompilationEngine {
         }
     }
 
-    private void identifier() {
+    private String identifier() {
         checkTokenType(TOKEN_TYPE.IDENTIFIER);
         String curTok = tokenizer.identifier();
         writeToken("identifier", curTok);
         if (tokenizer.hasMoreTokens()) {
             tokenizer.advance();
         }
+        return curTok;
     }
 
     private void integerConstant() {
@@ -428,24 +492,24 @@ public class CompilationEngine {
         }
     }
 
-    private void type() {
+    private String type() {
         if (matchesKeyWord(KEYWORD.INT)) {
-            keyword(KEYWORD.INT);
+            return keyword(KEYWORD.INT);
         } else if (matchesKeyWord(KEYWORD.CHAR)) {
-            keyword(KEYWORD.CHAR);
+            return keyword(KEYWORD.CHAR);
         } else if (matchesKeyWord(KEYWORD.BOOLEAN)) {
-            keyword(KEYWORD.BOOLEAN);
+            return keyword(KEYWORD.BOOLEAN);
         } else {
-            className();
+            return className();
         }
     }
 
-    private void varName() {
-        identifier();
+    private String varName() {
+        return identifier();
     }
 
-    private void className() {
-        identifier();
+    private String className() {
+        return identifier();
     }
 
     private void subroutineName() {
@@ -455,12 +519,12 @@ public class CompilationEngine {
     private void subroutineBody() {
         String tokenName = "subroutineBody";
         writeBegin(tokenName);
-    
+
         symbol('{');
         varDec_zero_more();
         compileStatements();
         symbol('}');
-        
+
         writeEnd(tokenName);
     }
 
@@ -483,22 +547,9 @@ public class CompilationEngine {
             compileExpressionList();
             symbol(')');
         }
-
     }
 
     //*** wild card occurance helpers ***/
-    private void classVarDec_zero_more() {
-        while (matchesClassVarDecBegin()) {
-            compileClassVarDec();
-        }
-    }
-
-    private void subroutineDec_zero_more() {
-        while (matchesSubroutineDecBegin()) {
-            compileSubroutine();
-        }
-    }
-
     private void comma_varName_zero_more() {
         char comma = ',';
         while (matchesSymbol(comma)) {

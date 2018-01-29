@@ -40,6 +40,14 @@ class GenericSymbolTable {
     }
 
     void add(String name, String type, KIND kind, int index) {
-        symbolTable.put(name, new SymbolTableEntry(type, KIND.FIELD, index));
+        symbolTable.put(name, new SymbolTableEntry(type, kind, index));
+    }
+    
+    void print(){
+        for(String key : symbolTable.keySet()){
+            SymbolTableEntry val = symbolTable.get(key);
+            String output = String.format("%s | %s | %s | %d", key, val.getType(), val.getKind().toString().toLowerCase(), val.getIndex());
+            System.out.println(output);
+        }
     }
 }
