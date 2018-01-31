@@ -21,9 +21,11 @@ public class VMWriter {
     private final String CALL = "call";
 
     private final StringBuffer vmCode;
+    private String fileName;
 
-    public VMWriter() {
+    public VMWriter(String fileName) {
         vmCode = new StringBuffer();
+        this.fileName = fileName;
     }
 
     private void appendNewLine() {
@@ -86,7 +88,7 @@ public class VMWriter {
 
     private void appendFunction(String commandName, String name, int count) {
         appendAsLowerCase(commandName);
-        appendStr(name);
+        appendStr(fileName + "." + name);
         append(count);
         appendNewLine();
     }
@@ -105,7 +107,7 @@ public class VMWriter {
     }
     
     public void open(String fileName){
-        //code to file open
+        this.fileName = fileName;
     }
 
     public void close() {
@@ -113,7 +115,7 @@ public class VMWriter {
     }
 
     public static void main(String args[]) {
-        VMWriter wr = new VMWriter();
+        VMWriter wr = new VMWriter("test");
         wr.writeFunction("Main.fibonacci", 0);
         wr.writePush(Segment.ARGUMENT, 0);
         wr.writePush(Segment.CONSTANT, 2);
@@ -139,5 +141,9 @@ public class VMWriter {
         wr.writeReturn();
         
         wr.close();
+    }
+
+    public void print() {
+        System.out.print(vmCode.toString());
     }
 }

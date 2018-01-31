@@ -29,15 +29,17 @@ public class CompilationEngine {
     private final String thisObj = "this";
 
     public static void main(String[] args) throws IOException {
-        CompilationEngine cengn = new CompilationEngine(new File("test.jack"));
+        CompilationEngine cengn = new CompilationEngine(new File("Main.jack"));
         cengn.beginCompilation();
+        cengn.vmWriter.print();
     }
 
     public CompilationEngine(File input) throws IOException {
         this.symbols = new HashSet<>(Arrays.asList('{', '}', '(', ')', '[', ']', '.', ',', ';', '+', '-', '*', '/', '&', '|', '<', '>', '=', '~'));
         tokenizer = new JackTokenizer(input);
-        vmWriter = new VMWriter();
+        vmWriter = new VMWriter(getFileNameWithoutExtension(input));
         symbolTable = new SymbolTable();
+        thisClassName = getFileNameWithoutExtension(input);
     }
 
     public void beginCompilation() {
@@ -47,18 +49,14 @@ public class CompilationEngine {
 
     //*** public tag creator methods ***
     public void compileClass() {
-        String tokenName = "class";
-        writeBegin(tokenName);
-
         keyword(KEYWORD.CLASS);
-        thisClassName = className();
+        className();
         symbol('{');
         classVarDec_zero_more();
         subroutineDec_zero_more();
         symbol('}');
         //delete this
-        symbolTable.printClassLevelSymTable();
-        writeEnd(tokenName);
+        //symbolTable.printClassLevelSymTable();
     }
     
     private void classVarDec_zero_more() {
@@ -71,7 +69,7 @@ public class CompilationEngine {
         while (matchesSubroutineDecBegin()) {
             symbolTable.startSubroutine();
             compileSubroutine();
-            symbolTable.printMethodLevelSymTable();
+            //symbolTable.printMethodLevelSymTable();
         }
     }
 
@@ -108,10 +106,7 @@ public class CompilationEngine {
         writeEnd(tokenName);
     }
 
-    public void compileSubroutine() {
-        String tokenName = "subroutineDec";
-        writeBegin(tokenName);
-
+    public void compileSubroutine() {        
         //constructor, function, or method
         if (matchesKeyWord(KEYWORD.CONSTRUCTOR)) {
             keyword(KEYWORD.CONSTRUCTOR);
@@ -119,7 +114,6 @@ public class CompilationEngine {
             keyword(KEYWORD.FUNCTION);
         } else {
             keyword(KEYWORD.METHOD);
-            //! add "this" to symbol table
             symbolTable.define(thisObj, thisClassName, KIND.ARG);
         }
         //void or type
@@ -128,13 +122,19 @@ public class CompilationEngine {
         } else {
             type();
         }
-        subroutineName();
+        
+        //parameters
+        String subroutineName = subroutineName();
         symbol('(');
         compileParameterList();
         symbol(')');
-        subroutineBody();
-
-        writeEnd(tokenName);
+        
+        //subroutineBody
+        symbol('{');
+        int varDecCount = varDec_zero_more();
+        vmWriter.writeFunction(subroutineName, varDecCount);
+        compileStatements();
+        symbol('}');
     }
 
     public void compileParameterList() {
@@ -512,8 +512,8 @@ public class CompilationEngine {
         return identifier();
     }
 
-    private void subroutineName() {
-        identifier();
+    private String subroutineName() {
+        return identifier();
     }
 
     private void subroutineBody() {
@@ -521,7 +521,9 @@ public class CompilationEngine {
         writeBegin(tokenName);
 
         symbol('{');
-        varDec_zero_more();
+        int varDecCount = varDec_zero_more();
+        //!write function 
+        vmWriter.writeFunction(tokenName, varDecCount);
         compileStatements();
         symbol('}');
 
@@ -567,10 +569,11 @@ public class CompilationEngine {
         }
     }
 
-    private void varDec_zero_more() {
+    private int varDec_zero_more() {
         while (matchesVarDecBegin()) {
             compileVarDec();
         }
+        return symbolTable.varCount(KIND.VAR);
     }
 
     private void op_term_zero_more() {
@@ -680,5 +683,9 @@ public class CompilationEngine {
                 || matchesSymbol('<')
                 || matchesSymbol('>')
                 || matchesSymbol('='));
+    }
+    
+    private String getFileNameWithoutExtension(File file){
+        return file.getName().replaceFirst("[.][^.]+$", "");
     }
 }
