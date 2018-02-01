@@ -1,7 +1,6 @@
 class Main {
    function void main() {
-      var boolean a;
-      let a = 1 * 2;
+      do A.m(1*2, 1 - (2*3));
       return;
    }
 }
