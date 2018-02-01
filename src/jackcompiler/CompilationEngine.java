@@ -12,6 +12,8 @@ import java.util.HashSet;
 import java.util.Set;
 import symboltable.KIND;
 import symboltable.SymbolTable;
+import vmwriter.ArithmaticCommand;
+import vmwriter.Segment;
 import vmwriter.VMWriter;
 
 /**
@@ -27,6 +29,9 @@ public class CompilationEngine {
     private final SymbolTable symbolTable;
     private String thisClassName;
     private final String thisObj = "this";
+    
+    private final String STRING_NEW = "String.new";
+    private final int STRING_NEW_N_ARGS = 1;
 
     public static void main(String[] args) throws IOException {
         CompilationEngine cengn = new CompilationEngine(new File("Main.jack"));
@@ -44,7 +49,6 @@ public class CompilationEngine {
 
     public void beginCompilation() {
         compileClass();
-        //System.out.println(content.toString());
     }
 
     //*** public tag creator methods ***
@@ -58,7 +62,7 @@ public class CompilationEngine {
         //delete this
         //symbolTable.printClassLevelSymTable();
     }
-    
+
     private void classVarDec_zero_more() {
         while (matchesClassVarDecBegin()) {
             compileClassVarDec();
@@ -106,7 +110,7 @@ public class CompilationEngine {
         writeEnd(tokenName);
     }
 
-    public void compileSubroutine() {        
+    public void compileSubroutine() {
         //constructor, function, or method
         if (matchesKeyWord(KEYWORD.CONSTRUCTOR)) {
             keyword(KEYWORD.CONSTRUCTOR);
@@ -122,13 +126,13 @@ public class CompilationEngine {
         } else {
             type();
         }
-        
+
         //parameters
         String subroutineName = subroutineName();
         symbol('(');
         compileParameterList();
         symbol(')');
-        
+
         //subroutineBody
         symbol('{');
         int varDecCount = varDec_zero_more();
@@ -160,7 +164,7 @@ public class CompilationEngine {
         final KIND kind = KIND.VAR;
         final String type;
         String varName;
-        
+
         String tokenName = "varDec";
         writeBegin(tokenName);
 
@@ -168,7 +172,7 @@ public class CompilationEngine {
         type = type();
         varName = varName();
         symbolTable.define(varName, type, kind);
-        
+
         //comma_varName_zero_more();
         char comma = ',';
         while (matchesSymbol(comma)) {
@@ -176,7 +180,7 @@ public class CompilationEngine {
             varName = varName();
             symbolTable.define(varName, type, kind);
         }
-        
+
         symbol(';');
 
         writeEnd(tokenName);
@@ -296,8 +300,6 @@ public class CompilationEngine {
 
         compileTerm();
         op_term_zero_more();
-
-        writeEnd(tokenName);
     }
 
     public void compileTerm() {
@@ -315,8 +317,13 @@ public class CompilationEngine {
             compileExpression();
             symbol(')');
         } else if (matchesUnaryOp()) {
-            unaryOp();
+            char op = unaryOp();
             compileTerm();
+            if(op == '-'){
+                vmWriter.writeArithmetic(ArithmaticCommand.NEG);
+            }else{
+                vmWriter.writeArithmetic(ArithmaticCommand.NOT);
+            }
         } else {
             char lookAhead = lookAhead().charAt(0);
             switch (lookAhead) {
@@ -374,15 +381,6 @@ public class CompilationEngine {
         } else if (tokenVal.equals("&")) {
             tokenVal = "&amp;";
         }
-
-        content.append("<").append(tokenType).append(">");
-        content.append(" ").append(tokenVal).append(" ");
-        content.append("</").append(tokenType).append(">");
-        appendLine();
-
-        //System.out.print("<" + tokenType + ">");
-        //System.out.print(" " + tokenVal + " ");
-        //System.out.println("</" + tokenType + ">");
     }
 
     //*** tokenizer related helper ***/
@@ -410,16 +408,17 @@ public class CompilationEngine {
         return keyword.toString().toLowerCase();
     }
 
-    private void symbol(char symbol) {
+    private char symbol(char symbol) {
         checkTokenType(TOKEN_TYPE.SYMBOL);
         char curTok = tokenizer.symbol();
         if (curTok != symbol) {
             throw new RuntimeException("Expected symbol " + symbol + " found " + curTok);
         }
-        writeToken("symbol", Character.toString(symbol));
+
         if (tokenizer.hasMoreTokens()) {
             tokenizer.advance();
         }
+        return curTok;
     }
 
     private String identifier() {
@@ -435,7 +434,7 @@ public class CompilationEngine {
     private void integerConstant() {
         checkTokenType(TOKEN_TYPE.INT_CONST);
         int curTok = tokenizer.intVal();
-        writeToken("integerConstant", Integer.toString(curTok));
+        vmWriter.writePush(Segment.CONSTANT, curTok);
         if (tokenizer.hasMoreTokens()) {
             tokenizer.advance();
         }
@@ -444,7 +443,14 @@ public class CompilationEngine {
     private void stringConstant() {
         checkTokenType(TOKEN_TYPE.STRING_CONST);
         String curTok = tokenizer.stringVal();
-        writeToken("stringConstant", curTok);
+        
+        vmWriter.writePush(Segment.CONSTANT, curTok.length());
+        vmWriter.writeCall("String.new", 1);
+        for(char ch : curTok.toCharArray()){
+            vmWriter.writePush(Segment.CONSTANT, (int)ch);
+            vmWriter.writeCall("String.appendChar", 2);
+        }
+        
         if (tokenizer.hasMoreTokens()) {
             tokenizer.advance();
         }
@@ -453,42 +459,47 @@ public class CompilationEngine {
     private void keywordConstant() {
         if (matchesKeyWord(KEYWORD.TRUE)) {
             keyword(KEYWORD.TRUE);
+            vmWriter.writePush(Segment.CONSTANT, 1);
+            vmWriter.writeArithmetic(ArithmaticCommand.NEG);
         } else if (matchesKeyWord(KEYWORD.FALSE)) {
             keyword(KEYWORD.FALSE);
+            vmWriter.writePush(Segment.CONSTANT, 0);
         } else if (matchesKeyWord(KEYWORD.NULL)) {
             keyword(KEYWORD.NULL);
+            vmWriter.writePush(Segment.CONSTANT, 0);
         } else {
             keyword(KEYWORD.THIS);
+            vmWriter.writePush(Segment.POINTER, 0);
         }
     }
 
-    private void op() {
+    private char op() {
         if (matchesSymbol('+')) {
-            symbol('+');
+            return symbol('+');
         } else if (matchesSymbol('-')) {
-            symbol('-');
+            return symbol('-');
         } else if (matchesSymbol('*')) {
-            symbol('*');
+            return symbol('*');
         } else if (matchesSymbol('/')) {
-            symbol('/');
+            return symbol('/');
         } else if (matchesSymbol('&')) {
-            symbol('&');
+            return symbol('&');
         } else if (matchesSymbol('|')) {
-            symbol('|');
+            return symbol('|');
         } else if (matchesSymbol('<')) {
-            symbol('<');
+            return symbol('<');
         } else if (matchesSymbol('>')) {
-            symbol('>');
+            return symbol('>');
         } else {
-            symbol('=');
+            return symbol('=');
         }
     }
 
-    private void unaryOp() {
+    private char unaryOp() {
         if (matchesSymbol('-')) {
-            symbol('-');
+            return symbol('-');
         } else {
-            symbol('~');
+            return symbol('~');
         }
     }
 
@@ -578,8 +589,38 @@ public class CompilationEngine {
 
     private void op_term_zero_more() {
         while (matchesOp()) {
-            op();
+            char op = op();
             compileTerm();
+
+            switch (op) {
+                case '+':
+                    vmWriter.writeArithmetic(ArithmaticCommand.ADD);
+                    break;
+                case '-':
+                    vmWriter.writeArithmetic(ArithmaticCommand.SUB);
+                    break;
+                case '*':
+                    vmWriter.writeCall("Math.multiply", 2);
+                    break;
+                case '/':
+                    vmWriter.writeCall("Math.divide", 2);
+                    break;
+                case '&':
+                    vmWriter.writeArithmetic(ArithmaticCommand.AND);
+                    break;
+                case '|':
+                    vmWriter.writeArithmetic(ArithmaticCommand.OR);
+                    break;
+                case '<':
+                    vmWriter.writeArithmetic(ArithmaticCommand.LT);
+                    break;
+                case '>':
+                    vmWriter.writeArithmetic(ArithmaticCommand.GT);
+                    break;
+                default:
+                    vmWriter.writeArithmetic(ArithmaticCommand.EQ);
+            }
+
         }
     }
 
@@ -684,8 +725,8 @@ public class CompilationEngine {
                 || matchesSymbol('>')
                 || matchesSymbol('='));
     }
-    
-    private String getFileNameWithoutExtension(File file){
+
+    private String getFileNameWithoutExtension(File file) {
         return file.getName().replaceFirst("[.][^.]+$", "");
     }
 }

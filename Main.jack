@@ -1,7 +1,12 @@
 class Main {
    function void main() {
-      var int a;
-      let a = 4;
+      var boolean a;
+      let a = 1 * 2;
       return;
    }
 }
+
+
+
+
+//'+', '-', '*', '/', '&', '|', '<', '>', '=', '~

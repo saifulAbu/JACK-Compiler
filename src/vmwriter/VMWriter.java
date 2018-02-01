@@ -94,7 +94,10 @@ public class VMWriter {
     }
 
     public void writeCall(String name, int numArgs) {
-        appendFunction(CALL, name, numArgs);
+        appendAsLowerCase(CALL);
+        appendStr(name);
+        append(numArgs);
+        appendNewLine();
     }
 
     public void writeFunction(String name, int numLocals) {
