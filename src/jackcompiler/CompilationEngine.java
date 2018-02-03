@@ -29,7 +29,8 @@ public class CompilationEngine {
     private final SymbolTable symbolTable;
     private String thisClassName;
     private final String thisObj = "this";
-    
+    private final LabelGenerator labelGen; 
+
     private final String STRING_NEW = "String.new";
     private final int STRING_NEW_N_ARGS = 1;
 
@@ -45,6 +46,7 @@ public class CompilationEngine {
         vmWriter = new VMWriter(getFileNameWithoutExtension(input));
         symbolTable = new SymbolTable();
         thisClassName = getFileNameWithoutExtension(input);
+        labelGen = new LabelGenerator();
     }
 
     public void beginCompilation() {
@@ -111,18 +113,24 @@ public class CompilationEngine {
     }
 
     public void compileSubroutine() {
+        KEYWORD subRoutineType;
+        boolean isVoid = false;
         //constructor, function, or method
         if (matchesKeyWord(KEYWORD.CONSTRUCTOR)) {
             keyword(KEYWORD.CONSTRUCTOR);
+            subRoutineType = KEYWORD.CONSTRUCTOR;
         } else if (matchesKeyWord(KEYWORD.FUNCTION)) {
             keyword(KEYWORD.FUNCTION);
+            subRoutineType = KEYWORD.FUNCTION;
         } else {
             keyword(KEYWORD.METHOD);
             symbolTable.define(thisObj, thisClassName, KIND.ARG);
+            subRoutineType = KEYWORD.METHOD;
         }
         //void or type
         if (matchesKeyWord(KEYWORD.VOID)) {
             keyword(KEYWORD.VOID);
+            isVoid = true;
         } else {
             type();
         }
@@ -137,6 +145,18 @@ public class CompilationEngine {
         symbol('{');
         int varDecCount = varDec_zero_more();
         vmWriter.writeFunction(subroutineName, varDecCount);
+        if (subRoutineType == KEYWORD.CONSTRUCTOR) {
+            //allocate memory with number of field count and set this pointer (pointer 0)
+            vmWriter.writePush(Segment.CONSTANT, symbolTable.varCount(KIND.FIELD));
+            vmWriter.writeCall("Memory.alloc", 1);
+            vmWriter.writePop(Segment.POINTER, 0);
+        } else if (subRoutineType == KEYWORD.METHOD) {
+            //argument 0 contains reference to the object the method is called upon
+            //push object's reference
+            vmWriter.writePush(Segment.ARGUMENT, 0);//push argument 0
+            //set this pointer
+            vmWriter.writePop(Segment.POINTER, 0);//pop pointer 0
+        }
         compileStatements();
         symbol('}');
     }
@@ -215,30 +235,94 @@ public class CompilationEngine {
         writeBegin(tokenName);
 
         keyword(KEYWORD.LET);
-        varName();
-
+        String varName = varName();
+        boolean isArray = false;
         //[expression] zero or one
         if (matchesSymbol('[')) {
+            isArray = true;
+
             symbol('[');
+            //pushes array offset to stack
             compileExpression();
+
+            //push array base address to stack
+            pushVariable(varName);
+
+            //compute array index address, the result would be on stack
+            vmWriter.writeArithmetic(ArithmaticCommand.ADD);
             symbol(']');
         }
 
         symbol('=');
         compileExpression();
+
+        if (isArray) {
+            popResultToArrayIndex();
+        } else{
+            popResultToVariable(varName);
+        }
+
         symbol(';');
 
         writeEnd(tokenName);
     }
 
-    public void compileIf() {
-        String tokenName = "ifStatement";
-        writeBegin(tokenName);
+    private void pushVariable(String varName) {
+        int index = symbolTable.indexOf(varName);
+        switch (symbolTable.kindOf(varName)) {
+            case STATIC:
+                vmWriter.writePush(Segment.STATIC, index);
+                break;
+            case FIELD:
+                vmWriter.writePush(Segment.THIS, index);
+                break;
+            case ARG:
+                vmWriter.writePush(Segment.ARGUMENT, index);
+                break;
+            case VAR:
+                vmWriter.writePush(Segment.LOCAL, index);
+                break;
+            default:
+                throw new RuntimeException("A variable should have a kind of static, field, arg or var");
+        };
+    }
 
+    private void popResultToArrayIndex() {
+        vmWriter.writePop(Segment.TEMP, 0); //pop temp 0; pops right side value to temp
+        vmWriter.writePop(Segment.POINTER, 1);//pop pointer 1; pops array index address to that pointer
+        vmWriter.writePush(Segment.TEMP, 0);//push temp 0; pushes right side value to stack
+        vmWriter.writePop(Segment.THAT, 0);//pop that 0; puts the result to desired address
+    }
+    
+    private void popResultToVariable(String varName){
+        int index = symbolTable.indexOf(varName);
+        switch (symbolTable.kindOf(varName)) {
+            case STATIC:
+                vmWriter.writePop(Segment.STATIC, index);
+                break;
+            case FIELD:
+                vmWriter.writePop(Segment.THIS, index);
+                break;
+            case ARG:
+                vmWriter.writePop(Segment.ARGUMENT, index);
+                break;
+            case VAR:
+                vmWriter.writePop(Segment.LOCAL, index);
+                break;
+            default:
+                throw new RuntimeException("An variable should have a kind of static, field, arg or var");
+        };
+    }
+
+    public void compileIf() {
+        labelGen.prepareIfLabel();
+        
         keyword(KEYWORD.IF);
         symbol('(');
         compileExpression();
         symbol(')');
+        
+        writeIfBegin();
 
         symbol('{');
         compileStatements();
@@ -247,38 +331,68 @@ public class CompilationEngine {
         //else { statements } zero or one
         if (matchesKeyWord(KEYWORD.ELSE)) {
             keyword(KEYWORD.ELSE);
+            
+            writeElseBegin();
+            
             symbol('{');
             compileStatements();
             symbol('}');
+            
+            vmWriter.writeLabel(labelGen.getIfEnd());
+            
+        }else{
+            vmWriter.writeLabel(labelGen.getIfFalse());
         }
-
-        writeEnd(tokenName);
+    }
+    
+    private void writeIfBegin(){
+        String ifTrue = labelGen.getIfTrue();
+        String ifFalse = labelGen.getIfFalse();
+        
+        vmWriter.writeIf(ifTrue);
+        vmWriter.writeGoto(ifFalse);
+        vmWriter.writeLabel(ifTrue);
+    }
+    
+    private void writeElseBegin(){
+        String ifFalse = labelGen.getIfFalse();
+        String ifEnd = labelGen.getIfEnd();
+        
+        vmWriter.writeGoto(ifEnd);
+        vmWriter.writeLabel(ifFalse);
     }
 
     public void compileWhile() {
-        String tokenName = "whileStatement";
-        writeBegin(tokenName);
-
+        labelGen.prepareWhileLabel();
+        String beginLabel = labelGen.getWhileBegin();
+        String endLabel = labelGen.getWhileEnd();
+        
         keyword(KEYWORD.WHILE);
+        vmWriter.writeLabel(beginLabel);
+        
         symbol('(');
         compileExpression();
         symbol(')');
+        
+        vmWriter.writeArithmetic(ArithmaticCommand.NOT);
+        vmWriter.writeIf(endLabel);
 
         symbol('{');
         compileStatements();
         symbol('}');
-
-        writeEnd(tokenName);
+        
+        vmWriter.writeGoto(beginLabel);
+        vmWriter.writeLabel(endLabel);
     }
 
     public void compileDo() {
-        String tokenName = "doStatement";
-        writeBegin(tokenName);
-
+        
         keyword(KEYWORD.DO);
         subroutineCall();
         symbol(';');
-        writeEnd(tokenName);
+        
+        //discard the result from the called function as it is not being assigned
+        vmWriter.writePop(Segment.TEMP, 0);//pop temp 0; discard the result
     }
 
     public void compileReturn() {
@@ -288,10 +402,12 @@ public class CompilationEngine {
         keyword(KEYWORD.RETURN);
         if (matchesExpressionBegin()) {
             compileExpression();
+        } else {
+            //this is a void function, so return 0 instead
+            vmWriter.writePush(Segment.CONSTANT, 0);//push constant 0
         }
         symbol(';');
-
-        writeEnd(tokenName);
+        vmWriter.writeReturn();
     }
 
     public void compileExpression() {
@@ -319,41 +435,47 @@ public class CompilationEngine {
         } else if (matchesUnaryOp()) {
             char op = unaryOp();
             compileTerm();
-            if(op == '-'){
+            if (op == '-') {
                 vmWriter.writeArithmetic(ArithmaticCommand.NEG);
-            }else{
+            } else {
                 vmWriter.writeArithmetic(ArithmaticCommand.NOT);
             }
         } else {
             char lookAhead = lookAhead().charAt(0);
+            String varName = null;
             switch (lookAhead) {
                 case '(':
                 case '.':
                     subroutineCall();
                     break;
                 case '[':
-                    varName();
+                    varName = varName();
                     symbol('[');
                     compileExpression();
+                    //push the value from arr[index] to stack
+                    pushVariable(varName);
+                    vmWriter.writeArithmetic(ArithmaticCommand.ADD);
+                    vmWriter.writePop(Segment.POINTER, 1);
+                    vmWriter.writePush(Segment.THAT, 0);
+                    
                     symbol(']');
                     break;
                 default:
-                    varName();
+                    varName = varName();
+                    pushVariable(varName);
                     break;
             }
         }
 
-        writeEnd(tokenName);
     }
-
-    public void compileExpressionList() {
-        String tokenName = "expressionList";
-        writeBegin(tokenName);
+    
+    public int compileExpressionList() {
+        int expressionCount = 0;
         if (matchesExpressionBegin()) {
             compileExpression();
-            comma_expression_zero_more();
+            expressionCount = comma_expression_zero_more() + 1;
         }
-        writeEnd(tokenName);
+        return expressionCount;
     }
 
     //*** token writer helpers ***/
@@ -443,14 +565,14 @@ public class CompilationEngine {
     private void stringConstant() {
         checkTokenType(TOKEN_TYPE.STRING_CONST);
         String curTok = tokenizer.stringVal();
-        
+
         vmWriter.writePush(Segment.CONSTANT, curTok.length());
         vmWriter.writeCall("String.new", 1);
-        for(char ch : curTok.toCharArray()){
-            vmWriter.writePush(Segment.CONSTANT, (int)ch);
+        for (char ch : curTok.toCharArray()) {
+            vmWriter.writePush(Segment.CONSTANT, (int) ch);
             vmWriter.writeCall("String.appendChar", 2);
         }
-        
+
         if (tokenizer.hasMoreTokens()) {
             tokenizer.advance();
         }
@@ -544,20 +666,35 @@ public class CompilationEngine {
     private void subroutineCall() {
         char lookAhead = lookAhead().charAt(0);
         if (lookAhead == '(') {
-            subroutineName();
+            String subroutineName = subroutineName();
             symbol('(');
-            compileExpressionList();
+            //push this 
+            vmWriter.writePush(Segment.POINTER, 0);//push pointer 0
+            int argCount = compileExpressionList();
+            vmWriter.writeCall(thisClassName + "." + subroutineName, argCount+1);
             symbol(')');
         } else {
-            if (matchesClassNameBegin()) {
-                className();
-            } else {
-                varName();
+            boolean isClass = false;
+            String className = null;
+            int argCount = 0;
+            String identifier = identifier();
+            //the identifier name could not be found on symbol table, this indicates it is a class name
+            if(symbolTable.kindOf(identifier) == KIND.NONE){
+                isClass = true;
+                className = identifier;
             }
+            
+            if(!isClass){
+                argCount = 1;
+                className = symbolTable.typeOf(identifier);
+                pushVariable(identifier);
+            }
+            
             symbol('.');
-            subroutineName();
+            String subroutineName = subroutineName();
             symbol('(');
-            compileExpressionList();
+            argCount += compileExpressionList();
+            vmWriter.writeCall(className + "." + subroutineName, argCount);
             symbol(')');
         }
     }
@@ -630,11 +767,14 @@ public class CompilationEngine {
         } while (matchesStatementBegin());
     }
 
-    private void comma_expression_zero_more() {
+    private int comma_expression_zero_more() {
+        int expressionCount = 0;
         while (matchesSymbol(',')) {
             symbol(',');
             compileExpression();
+            expressionCount++;
         }
+        return expressionCount;
     }
 
     //*** matches helper ***/

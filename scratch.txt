@@ -1,0 +1,10 @@
+if-goto IF_TRUE0
+goto IF_FALSE0
+label IF_TRUE0
+call A.fuck 0
+pop temp 0
+goto IF_END0
+label IF_FALSE0
+call B.fuck 0
+pop temp 0
+label IF_END0

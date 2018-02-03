@@ -123,7 +123,7 @@ public class JackTokenizer {
             tokenlist.add(getTokenWithString(token));
         });
 
-        System.out.println("Tokenization done successfully");
+        //System.out.println("Tokenization done successfully");
         
         return tokenlist;
     }

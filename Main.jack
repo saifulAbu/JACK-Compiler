@@ -1,11 +1,13 @@
-class Main {
-   function void main() {
-      do A.m(1*2, 1 - (2*3));
-      return;
+class Main {  
+   field int a;
+    field BClass b;
+
+   method int sum(){
+      while(1 = 2){
+        do A.fuck();
+      }
+
+      return 1;
    }
 }
 
-
-
-
-//'+', '-', '*', '/', '&', '|', '<', '>', '=', '~
