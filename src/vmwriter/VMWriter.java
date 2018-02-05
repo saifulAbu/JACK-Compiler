@@ -5,6 +5,10 @@
  */
 package vmwriter;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+
 /**
  *
  * @author sid
@@ -22,10 +26,12 @@ public class VMWriter {
 
     private final StringBuffer vmCode;
     private String fileName;
-
-    public VMWriter(String fileName) {
+    private String folderName;
+    
+    public VMWriter(String fileName, String outputDirectory) {
         vmCode = new StringBuffer();
         this.fileName = fileName;
+        this.folderName = outputDirectory;
     }
 
     private void appendNewLine() {
@@ -108,17 +114,22 @@ public class VMWriter {
         appendAsLowerCase(RETURN);
         appendNewLine();
     }
-    
-    public void open(String fileName){
-        this.fileName = fileName;
-    }
 
     public void close() {
-        System.out.print(vmCode.toString());
+        try{
+            BufferedWriter writer = new BufferedWriter(new FileWriter(folderName + "/" + fileName + ".vm"));
+            writer.write(vmCode.toString());
+            writer.flush();
+            writer.close();
+            System.out.println("Compilation Succesful for " + fileName);
+        }catch(Exception ex){
+        
+        }
+        
     }
 
     public static void main(String args[]) {
-        VMWriter wr = new VMWriter("test");
+        VMWriter wr = new VMWriter("test", "src");
         wr.writeFunction("Main.fibonacci", 0);
         wr.writePush(Segment.ARGUMENT, 0);
         wr.writePush(Segment.CONSTANT, 2);

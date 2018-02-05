@@ -3,8 +3,11 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package jackcompiler;
+package compilationengine;
 
+import tokenizer.TOKEN_TYPE;
+import tokenizer.KEYWORD;
+import tokenizer.JackTokenizer;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
@@ -29,28 +32,23 @@ public class CompilationEngine {
     private final SymbolTable symbolTable;
     private String thisClassName;
     private final String thisObj = "this";
-    private final LabelGenerator labelGen; 
+    private final LabelGenerator labelGen;
 
     private final String STRING_NEW = "String.new";
     private final int STRING_NEW_N_ARGS = 1;
 
-    public static void main(String[] args) throws IOException {
-        CompilationEngine cengn = new CompilationEngine(new File("Main.jack"));
-        cengn.beginCompilation();
-        cengn.vmWriter.print();
-    }
-
-    public CompilationEngine(File input) throws IOException {
+    public CompilationEngine(File input, String folderName) throws IOException {
         this.symbols = new HashSet<>(Arrays.asList('{', '}', '(', ')', '[', ']', '.', ',', ';', '+', '-', '*', '/', '&', '|', '<', '>', '=', '~'));
         tokenizer = new JackTokenizer(input);
-        vmWriter = new VMWriter(getFileNameWithoutExtension(input));
+        vmWriter = new VMWriter(getFileNameWithoutExtension(input), folderName);
         symbolTable = new SymbolTable();
         thisClassName = getFileNameWithoutExtension(input);
         labelGen = new LabelGenerator();
     }
 
-    public void beginCompilation() {
+    public void run() {
         compileClass();
+        vmWriter.close();
     }
 
     //*** public tag creator methods ***
@@ -258,7 +256,7 @@ public class CompilationEngine {
 
         if (isArray) {
             popResultToArrayIndex();
-        } else{
+        } else {
             popResultToVariable(varName);
         }
 
@@ -293,8 +291,8 @@ public class CompilationEngine {
         vmWriter.writePush(Segment.TEMP, 0);//push temp 0; pushes right side value to stack
         vmWriter.writePop(Segment.THAT, 0);//pop that 0; puts the result to desired address
     }
-    
-    private void popResultToVariable(String varName){
+
+    private void popResultToVariable(String varName) {
         int index = symbolTable.indexOf(varName);
         switch (symbolTable.kindOf(varName)) {
             case STATIC:
@@ -316,12 +314,12 @@ public class CompilationEngine {
 
     public void compileIf() {
         labelGen.prepareIfLabel();
-        
+
         keyword(KEYWORD.IF);
         symbol('(');
         compileExpression();
         symbol(')');
-        
+
         writeIfBegin();
 
         symbol('{');
@@ -331,33 +329,33 @@ public class CompilationEngine {
         //else { statements } zero or one
         if (matchesKeyWord(KEYWORD.ELSE)) {
             keyword(KEYWORD.ELSE);
-            
+
             writeElseBegin();
-            
+
             symbol('{');
             compileStatements();
             symbol('}');
-            
+
             vmWriter.writeLabel(labelGen.getIfEnd());
-            
-        }else{
+
+        } else {
             vmWriter.writeLabel(labelGen.getIfFalse());
         }
     }
-    
-    private void writeIfBegin(){
+
+    private void writeIfBegin() {
         String ifTrue = labelGen.getIfTrue();
         String ifFalse = labelGen.getIfFalse();
-        
+
         vmWriter.writeIf(ifTrue);
         vmWriter.writeGoto(ifFalse);
         vmWriter.writeLabel(ifTrue);
     }
-    
-    private void writeElseBegin(){
+
+    private void writeElseBegin() {
         String ifFalse = labelGen.getIfFalse();
         String ifEnd = labelGen.getIfEnd();
-        
+
         vmWriter.writeGoto(ifEnd);
         vmWriter.writeLabel(ifFalse);
     }
@@ -366,31 +364,31 @@ public class CompilationEngine {
         labelGen.prepareWhileLabel();
         String beginLabel = labelGen.getWhileBegin();
         String endLabel = labelGen.getWhileEnd();
-        
+
         keyword(KEYWORD.WHILE);
         vmWriter.writeLabel(beginLabel);
-        
+
         symbol('(');
         compileExpression();
         symbol(')');
-        
+
         vmWriter.writeArithmetic(ArithmaticCommand.NOT);
         vmWriter.writeIf(endLabel);
 
         symbol('{');
         compileStatements();
         symbol('}');
-        
+
         vmWriter.writeGoto(beginLabel);
         vmWriter.writeLabel(endLabel);
     }
 
     public void compileDo() {
-        
+
         keyword(KEYWORD.DO);
         subroutineCall();
         symbol(';');
-        
+
         //discard the result from the called function as it is not being assigned
         vmWriter.writePop(Segment.TEMP, 0);//pop temp 0; discard the result
     }
@@ -457,7 +455,7 @@ public class CompilationEngine {
                     vmWriter.writeArithmetic(ArithmaticCommand.ADD);
                     vmWriter.writePop(Segment.POINTER, 1);
                     vmWriter.writePush(Segment.THAT, 0);
-                    
+
                     symbol(']');
                     break;
                 default:
@@ -468,7 +466,7 @@ public class CompilationEngine {
         }
 
     }
-    
+
     public int compileExpressionList() {
         int expressionCount = 0;
         if (matchesExpressionBegin()) {
@@ -517,7 +515,7 @@ public class CompilationEngine {
         }
     }
 
-    private String keyword(jackcompiler.KEYWORD keyword) {
+    private String keyword(tokenizer.KEYWORD keyword) {
         checkTokenType(TOKEN_TYPE.KEYWORD);
         KEYWORD curTok = tokenizer.keyWord();
         if (curTok != keyword) {
@@ -671,7 +669,7 @@ public class CompilationEngine {
             //push this 
             vmWriter.writePush(Segment.POINTER, 0);//push pointer 0
             int argCount = compileExpressionList();
-            vmWriter.writeCall(thisClassName + "." + subroutineName, argCount+1);
+            vmWriter.writeCall(thisClassName + "." + subroutineName, argCount + 1);
             symbol(')');
         } else {
             boolean isClass = false;
@@ -679,17 +677,17 @@ public class CompilationEngine {
             int argCount = 0;
             String identifier = identifier();
             //the identifier name could not be found on symbol table, this indicates it is a class name
-            if(symbolTable.kindOf(identifier) == KIND.NONE){
+            if (symbolTable.kindOf(identifier) == KIND.NONE) {
                 isClass = true;
                 className = identifier;
             }
-            
-            if(!isClass){
+
+            if (!isClass) {
                 argCount = 1;
                 className = symbolTable.typeOf(identifier);
                 pushVariable(identifier);
             }
-            
+
             symbol('.');
             String subroutineName = subroutineName();
             symbol('(');
@@ -778,7 +776,7 @@ public class CompilationEngine {
     }
 
     //*** matches helper ***/
-    private boolean matchesKeyWord(jackcompiler.KEYWORD keyword) {
+    private boolean matchesKeyWord(tokenizer.KEYWORD keyword) {
         return (tokenizer.tokenType() == TOKEN_TYPE.KEYWORD) && tokenizer.keyWord() == keyword;
     }
 

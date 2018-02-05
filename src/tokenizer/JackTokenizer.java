@@ -3,7 +3,7 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package jackcompiler;
+package tokenizer;
 
 import java.io.File;
 import java.io.IOException;
@@ -171,10 +171,12 @@ public class JackTokenizer {
     }
 
     private String replaceAllComments(String content, String replacer) {
+        //remove single line comment \\/\\/.*\\n
+        String result = content.replaceAll("//.*",replacer);
+        
         //remove all multiline comment
-        String result = content.replaceAll("(?s)/\\*.*?\\*/", replacer);
-        //remove single line comment
-        result = result.replaceAll("\\/\\/.*\\n", replacer);
+        result = result.replaceAll("(?s)/\\*.*?\\*/", replacer);
+        
         return result;
     }
 
